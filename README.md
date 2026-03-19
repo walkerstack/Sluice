@@ -1,8 +1,6 @@
 # haiflow
 
-HTTP orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Runs Claude in tmux sessions and exposes a REST API to trigger prompts, queue work, and capture responses.
-
-Use it to automate Claude Code from n8n workflows, cron jobs, webhooks, or any HTTP client.
+Event-driven AI agent orchestrator. Trigger, queue, and manage headless [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions over tmux via HTTP API. Built for n8n, webhooks, and automation workflows.
 
 ```
 POST /trigger ──┐
@@ -44,7 +42,7 @@ bun run dev      # starts server with hot reload
 ```bash
 git clone https://github.com/andersonaguiar/haiflow.git
 cd haiflow
-bun run docker   # builds and runs in background
+docker compose up -d --build
 ```
 
 ### Try it out
@@ -160,7 +158,7 @@ Responses:
 Get the response for a completed task.
 
 ```bash
-curl -s http://localhost:3333/responses/task-001 | jq .
+curl -s "http://localhost:3333/responses/task-001?session=worker" | jq .
 ```
 
 ```json
@@ -239,7 +237,8 @@ ct '{"prompt": "explain the error in the logs", "id": "debug-1"}'
 ```
 haiflow/
 ├── src/
-│   └── index.ts              # Bun HTTP server
+│   ├── index.ts              # Bun HTTP server
+│   └── index.test.ts         # Tests
 ├── bin/
 │   ├── haiflow.ts            # CLI wrapper
 │   └── check-deps.sh         # Dependency checker
@@ -266,6 +265,7 @@ haiflow/
 | `bun run dev` | Start server with hot reload |
 | `bun run start` | Start server |
 | `bun run check` | Check all dependencies |
+| `bun run test` | Run tests |
 | `bun run docker` | Build and run with Docker |
 | `bun run docker:dev` | Build and run in foreground |
 | `bun run docker:stop` | Stop Docker container |

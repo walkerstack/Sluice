@@ -1,0 +1,40 @@
+{
+  "name": "haiflow",
+  "version": "0.1.0",
+  "description": "HTTP orchestrator for Claude Code — run Claude in tmux, trigger prompts via API, queue work, capture responses",
+  "module": "src/index.ts",
+  "type": "module",
+  "bin": {
+    "haiflow": "bin/haiflow.ts"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "setup": "bun run bin/haiflow.ts setup",
+    "check": "bash bin/check-deps.sh",
+    "docker": "docker compose up -d --build",
+    "docker:dev": "docker compose up --build",
+    "docker:stop": "docker compose down"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andersonaguiar/haiflow"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "orchestrator",
+    "tmux",
+    "automation",
+    "n8n",
+    "ai-agent"
+  ],
+  "author": "Anderson Aguiar",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

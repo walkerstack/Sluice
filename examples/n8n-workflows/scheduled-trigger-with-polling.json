@@ -1,0 +1,92 @@
+{
+  "name": "Haiflow - Scheduled Trigger with Response Polling",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 9 * * 1-5" }]
+        }
+      },
+      "id": "schedule-1",
+      "name": "Every Weekday 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3333/trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: 'summarize recent git commits and open PRs', session: 'default', id: 'daily-' + $now.format('yyyy-MM-dd'), source: 'n8n-schedule' }) }}"
+      },
+      "id": "trigger-1",
+      "name": "Send Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "id": "wait-1",
+      "name": "Wait 15s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3333/responses/{{ $('Send Prompt').item.json.id }}",
+        "options": {}
+      },
+      "id": "poll-1",
+      "name": "Check Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "pending",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "if-1",
+      "name": "Still Pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Every Weekday 9am": {
+      "main": [[{ "node": "Send Prompt", "type": "main", "index": 0 }]]
+    },
+    "Send Prompt": {
+      "main": [[{ "node": "Wait 15s", "type": "main", "index": 0 }]]
+    },
+    "Wait 15s": {
+      "main": [[{ "node": "Check Response", "type": "main", "index": 0 }]]
+    },
+    "Check Response": {
+      "main": [[{ "node": "Still Pending?", "type": "main", "index": 0 }]]
+    },
+    "Still Pending?": {
+      "main": [
+        [{ "node": "Wait 15s", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  }
+}

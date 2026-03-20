@@ -193,9 +193,18 @@ function stopClaudeSession(session: string): { success: boolean; error?: string 
     return { success: false, error: `tmux session '${tmuxName(session)}' not found` };
   }
 
-  const result = Bun.spawnSync(["tmux", "kill-session", "-t", tmuxName(session)]);
-  if (result.exitCode !== 0) {
-    return { success: false, error: result.stderr.toString() };
+  // Get the exact PIDs running inside the tmux panes before killing
+  const paneProcs = Bun.spawnSync([
+    "tmux", "list-panes", "-t", tmuxName(session), "-F", "#{pane_pid}",
+  ]);
+  const panePids = paneProcs.stdout.toString().trim().split("\n").filter(Boolean);
+
+  // Kill the tmux session (sends SIGHUP to processes inside)
+  Bun.spawnSync(["tmux", "kill-session", "-t", tmuxName(session)]);
+
+  // Kill the specific pane processes if they survived the SIGHUP
+  for (const pid of panePids) {
+    Bun.spawnSync(["kill", "-9", pid]);
   }
 
   setSessionId(session, null);

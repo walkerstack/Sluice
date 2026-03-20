@@ -8,7 +8,11 @@
 [![tmux](https://img.shields.io/badge/tmux-1BB91F?logo=tmux&logoColor=white)](https://github.com/tmux/tmux)
 [![GitHub stars](https://img.shields.io/github/stars/andersonaguiar/haiflow)](https://github.com/andersonaguiar/haiflow)
 
-Event-driven AI agent orchestrator. Trigger, queue, and manage headless [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions over tmux via HTTP API. Built for n8n, webhooks, and automation workflows.
+Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as a headless AI agent over HTTP — no API key costs, no SDK, just your existing Claude Code subscription.
+
+Haiflow wraps Claude Code in tmux sessions and exposes a REST API to trigger prompts, queue work, and capture responses. Automate anything you can do in Claude Code — code generation, refactoring, bug triage, daily reports — from any HTTP client.
+
+> **Why not the Claude API?** Claude Code includes tool use, file access, git integration, and your custom skills out of the box. Haiflow lets you automate all of that via HTTP without paying per-token API costs. Use n8n, cron, webhooks, or any automation tool to drive it.
 
 ![demo](assets/demo.gif)
 
@@ -216,7 +220,9 @@ Returns `ok`.
 
 ## Integration examples
 
-### n8n
+Haiflow works with any tool that can make HTTP requests. Here are a few examples:
+
+### n8n (example workflow templates included)
 
 Import the workflow templates from `examples/n8n-workflows/`:
 - `trigger-prompt.json` — Webhook that forwards prompts to haiflow

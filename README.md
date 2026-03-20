@@ -7,7 +7,7 @@
 
 Event-driven AI agent orchestrator. Trigger, queue, and manage headless [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions over tmux via HTTP API. Built for n8n, webhooks, and automation workflows.
 
-<video src="https://github.com/andersonaguiar/haiflow/releases/download/v0.1.0/demo.mov" width="100%" autoplay loop muted></video>
+[![Watch the demo](https://img.shields.io/badge/Demo-Watch%20Video-red?style=for-the-badge&logo=youtube)](https://github.com/andersonaguiar/haiflow/releases/download/v0.1.0/demo.mov)
 
 ```
 POST /trigger ──┐

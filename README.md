@@ -17,19 +17,19 @@ Haiflow wraps Claude Code in tmux sessions and exposes a REST API to trigger pro
 ![demo](assets/demo.gif)
 
 ```
-POST /trigger ──┐
-                │         ┌──────────────┐
-            ┌───▼────┐    │  tmux session │
-            │ Queue  │───>│  (claude)     │
-            │ (FIFO) │    └──────┬───────┘
-            └────────┘           │
-                          hooks fire on
-                          session events
-                                 │
-                          ┌──────▼───────┐
-                          │  Responses   │
-                          └──────┬───────┘
-GET /responses/:id <─────────────┘
+                                   ┌────────────────┐
+ POST /trigger ──┐                 │  tmux session  │
+                 │                 │    (claude)     │
+             ┌───▼────┐           └───────┬────────┘
+             │ Queue  │─────────>         │
+             │ (FIFO) │           hooks fire on
+             └────────┘           session events
+                                          │
+                                  ┌───────▼────────┐
+                                  │   Responses     │
+                                  └───────┬────────┘
+                                          │
+ GET /responses/:id <─────────────────────┘
 ```
 
 ## Prerequisites

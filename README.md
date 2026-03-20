@@ -68,6 +68,11 @@ curl -s "http://localhost:3333/responses/my-task?session=worker" | jq .
 
 # Watch Claude work (read-only)
 tmux attach -t claude-worker -r
+
+# Stop the session
+curl -X POST http://localhost:3333/session/stop \
+  -H "Content-Type: application/json" \
+  -d '{"session": "worker"}'
 ```
 
 Or use the CLI:
@@ -76,6 +81,7 @@ Or use the CLI:
 bun run bin/haiflow.ts start worker --cwd /path/to/your/project
 bun run bin/haiflow.ts trigger "explain this codebase" --session worker
 bun run bin/haiflow.ts status worker
+bun run bin/haiflow.ts stop worker
 ```
 
 ## Setup

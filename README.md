@@ -145,6 +145,22 @@ Hooks are excluded from auth since they come from Claude Code running locally.
 
 See [API.md](API.md) for the full API reference — all endpoints, parameters, and examples.
 
+## Dashboard
+
+Haiflow includes a built-in web dashboard for monitoring and controlling sessions in real-time.
+
+```
+http://localhost:3333/dashboard
+```
+
+Enter your `HAIFLOW_API_KEY` to authenticate, then you get a two-panel layout:
+
+- **Left panel** — all sessions with live status badges (idle/busy/offline)
+- **Right panel** — selected session's current prompt, queue, and response history
+- **Actions** — start/stop sessions, send prompts, clear queue/responses
+
+The dashboard auto-refreshes every 3 seconds. No extra setup needed — it's served by the same Bun server.
+
 ## Logging
 
 Haiflow outputs structured JSON logs to stdout/stderr for all key events:
@@ -201,7 +217,12 @@ ct '{"prompt": "explain the error in the logs", "id": "debug-1"}'
 ```
 haiflow/
 ├── src/
-│   └── index.ts              # Bun HTTP server
+│   ├── index.ts              # Bun HTTP server
+│   └── dashboard/            # Web dashboard (React + Tailwind)
+│       ├── index.html
+│       ├── app.tsx
+│       ├── api.ts
+│       └── components/
 ├── tests/
 │   ├── api.test.ts           # API integration tests
 │   ├── auth.test.ts          # Auth middleware tests

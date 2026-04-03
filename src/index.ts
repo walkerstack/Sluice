@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, unlinkSync } from "fs";
+import dashboard from "./dashboard/index.html";
 
 const BASE_DIR = process.env.HAIFLOW_DATA_DIR ?? "/tmp/haiflow";
 const PORT = Number(process.env.PORT ?? 3333);
@@ -365,6 +366,16 @@ const server = Bun.serve({
         }).filter(Boolean);
         return Response.json({ session, items: responses, length: responses.length });
       }),
+      DELETE: authed((req) => {
+        const session = getSessionParam(req);
+        const p = sessionPaths(session);
+        const files = readdirSync(p.responses).filter((f) => f.endsWith(".json"));
+        for (const f of files) {
+          try { unlinkSync(`${p.responses}/${f}`); } catch {}
+        }
+        log("info", "responses_cleared", { session, count: files.length });
+        return Response.json({ session, cleared: true, count: files.length });
+      }),
     },
 
     "/responses/:id": {
@@ -600,6 +611,12 @@ const server = Bun.serve({
     },
 
     "/health": new Response("ok"),
+    "/dashboard": dashboard,
+  },
+
+  development: {
+    hmr: true,
+    console: true,
   },
 
   fetch(req) {

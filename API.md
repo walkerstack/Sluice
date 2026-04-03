@@ -116,6 +116,19 @@ List all sessions and their status.
 
 List all completed response IDs.
 
+## `DELETE /responses`
+
+Clear all saved responses for a session.
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $HAIFLOW_API_KEY" \
+  "http://localhost:3333/responses?session=worker"
+```
+
+```json
+{ "session": "worker", "cleared": true, "count": 5 }
+```
+
 ## `GET /queue`
 
 View queued prompts for a session.

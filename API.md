@@ -1,6 +1,6 @@
 # API Reference
 
-All endpoints (except `/health` and `/hooks/*`) require an `Authorization: Bearer <HAIFLOW_API_KEY>` header.
+All endpoints (except `/health` and `/hooks/*`) require an `Authorization: Bearer <HAIFLOW_API_KEY>` header. `HAIFLOW_API_KEY` is any secret string you define — not a paid key or external credential.
 
 ## `POST /session/start`
 

@@ -49,7 +49,7 @@ git clone https://github.com/andersonaguiar/haiflow.git
 cd haiflow
 bun install      # also installs Claude Code hooks automatically
 cp .env.example .env
-# Edit .env and set HAIFLOW_API_KEY to a secret of your choice
+# Edit .env and set HAIFLOW_API_KEY to any secret string you choose
 bun run dev      # starts server with hot reload
 ```
 
@@ -122,12 +122,16 @@ cp .env.example .env
 | `PORT` | `3333` | HTTP server port |
 | `HAIFLOW_DATA_DIR` | `/tmp/haiflow` | Directory for session state, queues, and responses |
 | `HAIFLOW_PORT` | `3333` | Port used by hook scripts (set if different from PORT) |
-| `HAIFLOW_API_KEY` | — | **Required.** Bearer token for API auth |
+| `HAIFLOW_API_KEY` | — | **Required.** Any string you choose — this is your own secret, not a paid key |
 | `N8N_API_KEY` | — | n8n API key for workflow integration |
 
 ## Authentication
 
-`HAIFLOW_API_KEY` is required. The server will refuse to start without it. All API endpoints (except `/health` and `/hooks/*`) require an `Authorization` header:
+`HAIFLOW_API_KEY` is required — pick any string you like (e.g. `openssl rand -hex 32`). It's not a third-party key or paid credential, just a secret you define to protect your server.
+
+**Why this matters:** Without auth, anyone who can reach your server could send arbitrary prompts to Claude Code running with full file and git access. That means reading your source code, modifying files, running shell commands, or exfiltrating data — all through a simple HTTP request.
+
+The server will refuse to start without it. All API endpoints (except `/health` and `/hooks/*`) require an `Authorization` header:
 
 ```bash
 curl -H "Authorization: Bearer your-secret-key" http://localhost:3333/sessions

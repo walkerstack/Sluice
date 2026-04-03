@@ -48,30 +48,38 @@ GET /responses/:id/stream <───────┘  (SSE)
 git clone https://github.com/andersonaguiar/haiflow.git
 cd haiflow
 bun install      # also installs Claude Code hooks automatically
+cp .env.example .env
+# Edit .env and set HAIFLOW_API_KEY to a secret of your choice
 bun run dev      # starts server with hot reload
 ```
 
 ### Try it out
 
 ```bash
+export HAIFLOW_API_KEY="your-secret-key"
+
 # Start a Claude session
 curl -X POST http://localhost:3333/session/start \
+  -H "Authorization: Bearer $HAIFLOW_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"session": "worker", "cwd": "/path/to/your/project"}'
 
 # Send a prompt
 curl -X POST http://localhost:3333/trigger \
+  -H "Authorization: Bearer $HAIFLOW_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "explain this codebase", "session": "worker", "id": "my-task"}'
 
 # Poll for the response
-curl -s "http://localhost:3333/responses/my-task?session=worker" | jq .
+curl -s -H "Authorization: Bearer $HAIFLOW_API_KEY" \
+  "http://localhost:3333/responses/my-task?session=worker" | jq .
 
 # Watch Claude work (read-only)
 tmux attach -t worker -r
 
 # Stop the session
 curl -X POST http://localhost:3333/session/stop \
+  -H "Authorization: Bearer $HAIFLOW_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"session": "worker"}'
 ```
@@ -168,6 +176,7 @@ Import the workflow templates from `examples/n8n-workflows/`:
 
 ```bash
 0 9 * * * curl -X POST http://localhost:3333/trigger \
+  -H "Authorization: Bearer $HAIFLOW_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "/daily-update", "id": "daily-'$(date +\%Y\%m\%d)'", "source": "cron"}'
 ```
@@ -175,7 +184,9 @@ Import the workflow templates from `examples/n8n-workflows/`:
 ### Shell alias
 
 ```bash
-alias ct='curl -s -X POST http://localhost:3333/trigger -H "Content-Type: application/json" -d'
+alias ct='curl -s -X POST http://localhost:3333/trigger \
+  -H "Authorization: Bearer $HAIFLOW_API_KEY" \
+  -H "Content-Type: application/json" -d'
 ct '{"prompt": "explain the error in the logs", "id": "debug-1"}'
 ```
 
@@ -187,6 +198,7 @@ haiflow/
 │   └── index.ts              # Bun HTTP server
 ├── tests/
 │   ├── api.test.ts           # API integration tests
+│   ├── auth.test.ts          # Auth middleware tests
 │   └── index.test.ts         # Unit tests
 ├── bin/
 │   ├── haiflow.ts            # CLI wrapper
@@ -199,7 +211,11 @@ haiflow/
 ├── examples/
 │   ├── n8n-workflows/        # Importable n8n workflow JSON files
 │   └── curl-examples.sh      # Quick start curl scripts
+├── assets/
+│   └── demo.gif              # Demo recording
+├── API.md                    # Full API reference
 ├── .env.example
+├── tsconfig.json
 ├── package.json
 └── LICENSE
 ```

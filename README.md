@@ -30,7 +30,9 @@ POST /trigger ───┐
                           │    Responses   │
                           └───────┬────────┘
                                   │
-GET /responses/:id <──────────────┘
+GET /responses/:id <──────────────┤
+                                  │
+GET /responses/:id/stream <───────┘  (SSE)
 ```
 
 ## Prerequisites
@@ -112,7 +114,18 @@ cp .env.example .env
 | `PORT` | `3333` | HTTP server port |
 | `HAIFLOW_DATA_DIR` | `/tmp/haiflow` | Directory for session state, queues, and responses |
 | `HAIFLOW_PORT` | `3333` | Port used by hook scripts (set if different from PORT) |
+| `HAIFLOW_API_KEY` | — | **Required.** Bearer token for API auth |
 | `N8N_API_KEY` | — | n8n API key for workflow integration |
+
+## Authentication
+
+`HAIFLOW_API_KEY` is required. The server will refuse to start without it. All API endpoints (except `/health` and `/hooks/*`) require an `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer your-secret-key" http://localhost:3333/sessions
+```
+
+Hooks are excluded from auth since they come from Claude Code running locally.
 
 ## API
 
@@ -184,6 +197,38 @@ Status codes:
 - **202**: `{"status": "pending"}` or `{"status": "queued"}`
 - **404**: Unknown task ID
 
+### `GET /responses/:id/stream`
+
+Stream response status via Server-Sent Events. Opens a persistent connection that sends real-time updates until the task completes — no polling required.
+
+```bash
+curl -N "http://localhost:3333/responses/task-001/stream?session=worker"
+```
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `timeout` | `300` | Max seconds to wait (capped at 600) |
+
+Events:
+- **`status`**: `{"id": "...", "status": "pending"}` or `{"status": "queued", "position": 2}`
+- **`complete`**: Full response object (same as `GET /responses/:id`)
+- **`error`**: `{"error": "Session is offline"}`
+- **`timeout`**: Sent when the timeout is reached
+
+Example with EventSource (browser/Node):
+
+```js
+const es = new EventSource("http://localhost:3333/responses/task-001/stream?session=worker");
+es.addEventListener("complete", (e) => {
+  const response = JSON.parse(e.data);
+  console.log(response.messages);
+  es.close();
+});
+es.addEventListener("status", (e) => console.log("Status:", JSON.parse(e.data)));
+es.addEventListener("error", (e) => { console.error(e.data); es.close(); });
+es.addEventListener("timeout", () => { console.log("Timed out"); es.close(); });
+```
+
 ### `GET /status`
 
 ```bash
@@ -209,6 +254,20 @@ Clear all queued prompts.
 ### `GET /health`
 
 Returns `ok`.
+
+## Logging
+
+Haiflow outputs structured JSON logs to stdout/stderr for all key events:
+
+```jsonl
+{"ts":"2025-03-18T02:35:00Z","level":"info","event":"server_started","port":3333,"auth":true}
+{"ts":"2025-03-18T02:35:01Z","level":"info","event":"session_started","session":"worker","cwd":"/app"}
+{"ts":"2025-03-18T02:35:02Z","level":"info","event":"trigger_sent","session":"worker","taskId":"task-001"}
+{"ts":"2025-03-18T02:35:09Z","level":"info","event":"response_saved","session":"worker","taskId":"task-001","source":"transcript"}
+{"ts":"2025-03-18T02:35:10Z","level":"warn","event":"auth_rejected","path":"/trigger"}
+```
+
+Events: `server_started`, `sessions_recovered`, `session_started`, `session_stopped`, `session_start_failed`, `trigger_sent`, `trigger_queued`, `trigger_failed`, `queue_drained`, `queue_cleared`, `response_saved`, `stream_opened`, `hook_session_start`, `hook_stop`, `hook_session_end`, `auth_rejected`.
 
 ## How it works
 

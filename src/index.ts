@@ -2,8 +2,41 @@ import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, unlink
 
 const BASE_DIR = process.env.HAIFLOW_DATA_DIR ?? "/tmp/haiflow";
 const PORT = Number(process.env.PORT ?? 3333);
+const API_KEY = process.env.HAIFLOW_API_KEY?.trim();
+
+if (!API_KEY) {
+  console.error("HAIFLOW_API_KEY is required. Set it in your .env or environment.");
+  process.exit(1);
+}
 
 mkdirSync(BASE_DIR, { recursive: true });
+
+// --- Structured logging ---
+
+function log(level: "info" | "warn" | "error", event: string, data?: Record<string, unknown>) {
+  const entry = JSON.stringify({ ts: new Date().toISOString(), level, event, ...data });
+  if (level === "error") console.error(entry);
+  else console.log(entry);
+}
+
+// --- Auth ---
+
+function requireAuth(req: Request): Response | null {
+  const header = req.headers.get("authorization");
+  if (header === `Bearer ${API_KEY}`) return null;
+  log("warn", "auth_rejected", { path: new URL(req.url).pathname });
+  return Response.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function authed(handler: (req: any) => Response | Promise<Response>) {
+  return (req: any): Response | Promise<Response> => {
+    const err = requireAuth(req);
+    if (err) return err;
+    return handler(req);
+  };
+}
+
+// --- Session helpers ---
 
 function sanitizeSession(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "default";
@@ -145,6 +178,7 @@ function saveResponse(session: string, taskId: string, transcriptPath?: string, 
         writeFileSync(file, JSON.stringify({
           id: taskId, completed_at: new Date().toISOString(), messages,
         }, null, 2));
+        log("info", "response_saved", { session, taskId, source: "transcript" });
         return;
       }
     } catch {}
@@ -154,6 +188,7 @@ function saveResponse(session: string, taskId: string, transcriptPath?: string, 
     writeFileSync(file, JSON.stringify({
       id: taskId, completed_at: new Date().toISOString(), messages: [lastMessage],
     }, null, 2));
+    log("info", "response_saved", { session, taskId, source: "fallback" });
   }
 }
 
@@ -175,6 +210,7 @@ function drainQueue(session: string) {
   });
 
   sendToTmux(session, next.prompt);
+  log("info", "queue_drained", { session, taskId: next.id, remaining: queue.length });
 }
 
 function startClaudeSession(session: string, cwd: string): { success: boolean; error?: string } {
@@ -188,11 +224,13 @@ function startClaudeSession(session: string, cwd: string): { success: boolean; e
   ]);
 
   if (result.exitCode !== 0) {
+    log("error", "session_start_failed", { session, error: result.stderr.toString() });
     return { success: false, error: result.stderr.toString() };
   }
 
   setSessionId(session, null);
   writeState(session, { status: "idle", since: new Date().toISOString() });
+  log("info", "session_started", { session, cwd });
   return { success: true };
 }
 
@@ -217,6 +255,7 @@ function stopClaudeSession(session: string): { success: boolean; error?: string 
 
   setSessionId(session, null);
   writeState(session, { status: "offline", since: new Date().toISOString() });
+  log("info", "session_stopped", { session });
   return { success: true };
 }
 
@@ -239,15 +278,15 @@ const server = Bun.serve({
   port: PORT,
   routes: {
     "/sessions": {
-      GET: () => Response.json(listSessions()),
+      GET: authed(() => Response.json(listSessions())),
     },
 
     "/status": {
-      GET: (req) => Response.json(readState(getSessionParam(req))),
+      GET: authed((req) => Response.json(readState(getSessionParam(req)))),
     },
 
     "/trigger": {
-      POST: async (req) => {
+      POST: authed(async (req) => {
         const body = await req.json();
         const prompt = body.prompt as string;
         const source = body.source as string | undefined;
@@ -271,6 +310,7 @@ const server = Bun.serve({
           const queue = readQueue(session);
           queue.push({ id, prompt, addedAt: new Date().toISOString(), source });
           writeQueue(session, queue);
+          log("info", "trigger_queued", { session, taskId: id, position: queue.length });
           return Response.json({
             id, session, queued: true, position: queue.length,
             message: "Claude is busy. Prompt added to queue.",
@@ -286,28 +326,31 @@ const server = Bun.serve({
 
         const sent = sendToTmux(session, prompt);
         if (!sent) {
+          log("error", "trigger_failed", { session, taskId: id });
           return Response.json({ error: "Failed to send to tmux session" }, { status: 500 });
         }
 
+        log("info", "trigger_sent", { session, taskId: id });
         return Response.json({ id, session, sent: true, prompt });
-      },
+      }),
     },
 
     "/queue": {
-      GET: (req) => {
+      GET: authed((req) => {
         const session = getSessionParam(req);
         const queue = readQueue(session);
         return Response.json({ session, items: queue, length: queue.length });
-      },
-      DELETE: (req) => {
+      }),
+      DELETE: authed((req) => {
         const session = getSessionParam(req);
         writeQueue(session, []);
+        log("info", "queue_cleared", { session });
         return Response.json({ session, cleared: true });
-      },
+      }),
     },
 
     "/responses": {
-      GET: (req) => {
+      GET: authed((req) => {
         const session = getSessionParam(req);
         const p = sessionPaths(session);
         const files = readdirSync(p.responses).filter((f) => f.endsWith(".json"));
@@ -321,11 +364,11 @@ const server = Bun.serve({
           }
         }).filter(Boolean);
         return Response.json({ session, items: responses, length: responses.length });
-      },
+      }),
     },
 
     "/responses/:id": {
-      GET: (req) => {
+      GET: authed((req) => {
         const session = getSessionParam(req);
         const id = req.params.id;
         const file = responseFile(session, id);
@@ -335,7 +378,7 @@ const server = Bun.serve({
             return Response.json({ id, session, status: "pending" }, { status: 202 });
           }
           const queue = readQueue(session);
-          const queued = queue.find((q) => q.id === id);
+          const queued = queue.find((q: QueueItem) => q.id === id);
           if (queued) {
             return Response.json({ id, session, status: "queued" }, { status: 202 });
           }
@@ -347,8 +390,98 @@ const server = Bun.serve({
         } catch {
           return Response.json({ error: "Failed to read response" }, { status: 500 });
         }
-      },
+      }),
     },
+
+    "/responses/:id/stream": {
+      GET: authed((req) => {
+        const session = getSessionParam(req);
+        const id = req.params.id;
+        const url = new URL(req.url);
+        const timeoutSec = Math.min(Number(url.searchParams.get("timeout") ?? 300), 600);
+
+        // Fast path: already complete
+        const file = responseFile(session, id);
+        if (existsSync(file)) {
+          try {
+            const raw = readFileSync(file, "utf-8");
+            const data = JSON.parse(raw);
+            const body = `event: complete\ndata: ${JSON.stringify(data)}\n\n`;
+            return new Response(body, {
+              headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+              },
+            });
+          } catch {}
+        }
+
+        log("info", "stream_opened", { session, taskId: id, timeoutSec });
+
+        return new Response(
+          new ReadableStream({
+            async start(controller) {
+              const encoder = new TextEncoder();
+              const send = (event: string, payload: unknown) => {
+                controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`));
+              };
+
+              try {
+                const deadline = Date.now() + timeoutSec * 1000;
+                const interval = 1500;
+
+                while (Date.now() < deadline) {
+                  const f = responseFile(session, id);
+                  if (existsSync(f)) {
+                    try {
+                      const raw = readFileSync(f, "utf-8");
+                      send("complete", JSON.parse(raw));
+                    } catch {
+                      send("error", { id, error: "Failed to read response" });
+                    }
+                    controller.close();
+                    return;
+                  }
+
+                  const state = readState(session);
+                  if (state.currentTaskId === id && state.status === "busy") {
+                    send("status", { id, session, status: "pending" });
+                  } else {
+                    const queue = readQueue(session);
+                    const queued = queue.find((q: QueueItem) => q.id === id);
+                    if (queued) {
+                      const position = queue.indexOf(queued) + 1;
+                      send("status", { id, session, status: "queued", position });
+                    } else if (state.status === "offline") {
+                      send("error", { id, error: "Session is offline" });
+                      controller.close();
+                      return;
+                    }
+                  }
+
+                  await Bun.sleep(interval);
+                }
+
+                send("timeout", { id, error: "Timed out waiting for response" });
+              } catch {
+                // Client disconnected
+              }
+
+              try { controller.close(); } catch {}
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive",
+            },
+          }
+        );
+      }),
+    },
+
+    // --- Hooks (no auth — these come from Claude Code itself) ---
 
     "/hooks/session-start": {
       POST: async (req) => {
@@ -371,6 +504,7 @@ const server = Bun.serve({
           if (isTmuxRunning(session)) {
             writeState(session, { status: "idle", since: new Date().toISOString() });
           }
+          log("info", "hook_session_start", { session, claudeId });
         }
 
         return Response.json({ ok: true, session });
@@ -408,6 +542,7 @@ const server = Bun.serve({
 
         writeState(session, { status: "idle", since: new Date().toISOString() });
         drainQueue(session);
+        log("info", "hook_stop", { session, taskId: state.currentTaskId });
 
         return Response.json({ ok: true });
       },
@@ -425,12 +560,13 @@ const server = Bun.serve({
         }
 
         writeState(session, { status: "offline", since: new Date().toISOString() });
+        log("info", "hook_session_end", { session, reason });
         return Response.json({ ok: true });
       },
     },
 
     "/session/start": {
-      POST: async (req) => {
+      POST: authed(async (req) => {
         const body = await req.json();
         const session = sanitizeSession((body.session as string) || "default");
         const cwd = body.cwd as string | undefined;
@@ -444,11 +580,11 @@ const server = Bun.serve({
           return Response.json({ error: result.error }, { status: 409 });
         }
         return Response.json({ started: true, session, tmux: tmuxName(session), cwd });
-      },
+      }),
     },
 
     "/session/stop": {
-      POST: async (req) => {
+      POST: authed(async (req) => {
         let session = "default";
         try {
           const body = await req.json();
@@ -460,7 +596,7 @@ const server = Bun.serve({
           return Response.json({ error: result.error }, { status: 404 });
         }
         return Response.json({ stopped: true, session });
-      },
+      }),
     },
 
     "/health": new Response("ok"),
@@ -480,5 +616,5 @@ for (const dir of readdirSync(BASE_DIR).filter((d) => existsSync(`${BASE_DIR}/${
   }
 }
 
-console.log(`haiflow running on http://localhost:${server.port}`);
-console.log(`Sessions: ${JSON.stringify(listSessions())}`);
+log("info", "server_started", { port: server.port, auth: !!API_KEY });
+log("info", "sessions_recovered", { sessions: listSessions() });

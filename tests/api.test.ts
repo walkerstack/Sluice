@@ -3,14 +3,17 @@ import { mkdirSync, writeFileSync, existsSync, rmSync } from "fs";
 
 const TEST_PORT = 9876;
 const TEST_DIR = "/tmp/haiflow-test";
+const TEST_API_KEY = "test-api-key";
 const BASE = `http://localhost:${TEST_PORT}`;
 
 let server: ReturnType<typeof Bun.spawn>;
 
+const authHeaders: Record<string, string> = { "Authorization": `Bearer ${TEST_API_KEY}` };
+
 async function api(path: string, method = "GET", body?: object) {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: body ? { ...authHeaders, "Content-Type": "application/json" } : authHeaders,
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: res.status, data: res.headers.get("content-type")?.includes("json") ? await res.json() : await res.text() };
@@ -38,7 +41,7 @@ beforeAll(async () => {
   if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
 
   server = Bun.spawn(["bun", "run", "src/index.ts"], {
-    env: { ...process.env, PORT: String(TEST_PORT), HAIFLOW_DATA_DIR: TEST_DIR },
+    env: { ...process.env, PORT: String(TEST_PORT), HAIFLOW_DATA_DIR: TEST_DIR, HAIFLOW_API_KEY: TEST_API_KEY },
     stdout: "ignore",
     stderr: "ignore",
   });
@@ -373,6 +376,109 @@ describe("POST /session/stop", () => {
     const { status, data } = await api("/session/stop", "POST", { session: "no-tmux" });
     expect(status).toBe(404);
     expect(data.error).toContain("not found");
+  });
+});
+
+// --- SSE Streaming ---
+
+describe("GET /responses/:id/stream", () => {
+  test("streams complete event for existing response", async () => {
+    writeResponse("stream-done", "done-task", {
+      id: "done-task",
+      completed_at: "2025-01-01T00:00:00Z",
+      messages: ["result"],
+    });
+
+    const res = await fetch(`${BASE}/responses/done-task/stream?session=stream-done`, { headers: authHeaders });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+    const text = await res.text();
+    expect(text).toContain("event: complete");
+    expect(text).toContain("done-task");
+  });
+
+  test("streams status updates then complete for pending task", async () => {
+    writeState("stream-pending", {
+      status: "busy",
+      since: new Date().toISOString(),
+      currentTaskId: "pending-stream",
+    });
+
+    // Start streaming in background
+    const resPromise = fetch(`${BASE}/responses/pending-stream/stream?session=stream-pending&timeout=10`, { headers: authHeaders });
+
+    // Wait a bit then write the response file
+    await Bun.sleep(2000);
+    writeResponse("stream-pending", "pending-stream", {
+      id: "pending-stream",
+      completed_at: new Date().toISOString(),
+      messages: ["streamed result"],
+    });
+
+    const res = await resPromise;
+    const text = await res.text();
+    expect(text).toContain("event: status");
+    expect(text).toContain("event: complete");
+    expect(text).toContain("streamed result");
+  });
+
+  test("streams error for offline session", async () => {
+    writeState("stream-offline", {
+      status: "offline",
+      since: new Date().toISOString(),
+    });
+
+    const res = await fetch(`${BASE}/responses/unknown-task/stream?session=stream-offline&timeout=5`, { headers: authHeaders });
+    const text = await res.text();
+    expect(text).toContain("event: error");
+    expect(text).toContain("offline");
+  });
+
+  test("streams queued status with position", async () => {
+    writeState("stream-queued", {
+      status: "busy",
+      since: new Date().toISOString(),
+      currentTaskId: "other-task",
+    });
+    writeQueue("stream-queued", [
+      { id: "first-q", prompt: "first", addedAt: "2025-01-01T00:00:00Z" },
+      { id: "second-q", prompt: "second", addedAt: "2025-01-01T00:01:00Z" },
+    ]);
+
+    // Start stream, then quickly write the response to close it
+    const resPromise = fetch(`${BASE}/responses/second-q/stream?session=stream-queued&timeout=10`, { headers: authHeaders });
+
+    await Bun.sleep(2000);
+    writeResponse("stream-queued", "second-q", {
+      id: "second-q",
+      completed_at: new Date().toISOString(),
+      messages: ["done"],
+    });
+
+    const res = await resPromise;
+    const text = await res.text();
+    expect(text).toContain("event: status");
+    expect(text).toContain('"status":"queued"');
+    expect(text).toContain('"position":2');
+    expect(text).toContain("event: complete");
+  });
+
+  test("respects timeout parameter", async () => {
+    writeState("stream-timeout", {
+      status: "busy",
+      since: new Date().toISOString(),
+      currentTaskId: "will-timeout",
+    });
+
+    const start = Date.now();
+    const res = await fetch(`${BASE}/responses/will-timeout/stream?session=stream-timeout&timeout=3`, { headers: authHeaders });
+    const text = await res.text();
+    const elapsed = Date.now() - start;
+
+    expect(text).toContain("event: timeout");
+    expect(elapsed).toBeGreaterThan(2500);
+    expect(elapsed).toBeLessThan(6000);
   });
 });
 

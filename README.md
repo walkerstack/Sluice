@@ -1,6 +1,6 @@
 # haiflow
 
-hooks · ai · flow
+**h**ooks · **ai** · **flow**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)

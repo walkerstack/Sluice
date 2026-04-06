@@ -16,7 +16,7 @@ Haiflow wraps Claude Code in tmux sessions and exposes a REST API to trigger pro
 
 > **Why not the Claude API?** Claude Code includes tool use, file access, git integration, and your custom skills out of the box. Haiflow lets you automate all of that via HTTP without paying per-token API costs. Use n8n, cron, webhooks, or any automation tool to drive it.
 
-![demo](assets/demo.gif)
+![demo](assets/demo.gif?v=2)
 
 ```
 POST /trigger ───┐

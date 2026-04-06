@@ -1002,6 +1002,27 @@ const server = Bun.serve({
       }),
     },
 
+    "/session/remove": {
+      POST: authed(async (req) => {
+        const body = await req.json();
+        const session = sanitizeSession((body.session as string) || "");
+        if (!session) return Response.json({ error: "session is required" }, { status: 400 });
+
+        const state = readState(session);
+        if (state.status !== "offline") {
+          return Response.json({ error: "Session must be offline to remove" }, { status: 409 });
+        }
+
+        const dir = `${BASE_DIR}/${session}`;
+        if (existsSync(dir)) {
+          const { rmSync } = await import("fs");
+          rmSync(dir, { recursive: true });
+        }
+        log("info", "session_removed", { session });
+        return Response.json({ removed: true, session });
+      }),
+    },
+
     "/health": new Response("ok"),
     "/dashboard": dashboard,
   },

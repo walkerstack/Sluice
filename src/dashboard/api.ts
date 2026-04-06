@@ -95,6 +95,14 @@ export async function stopSession(session: string) {
   return { status: res.status, data: await res.json() };
 }
 
+export async function removeSession(session: string) {
+  const res = await apiFetch("/session/remove", {
+    method: "POST",
+    body: JSON.stringify({ session }),
+  });
+  return { status: res.status, data: await res.json() };
+}
+
 export async function getPipeline() {
   const res = await apiFetch("/pipeline");
   return res.json();

@@ -90,8 +90,9 @@ Flow: [Event Source] → n8n → haiflow /trigger → Claude Code → /responses
 Nodes:
 1. [Trigger] — [description]
 2. POST /trigger — send prompt to Claude via haiflow
-3. [Wait/Poll] — poll /responses/:id
-4. [Action] — use Claude's response
+3. GET /responses/:id/stream — SSE stream until complete (text response, 310s timeout)
+4. Code node — parse `event: complete` from SSE text
+5. [Action] — use Claude's response
 ```
 
 **Raw code proposal format:**
@@ -105,8 +106,9 @@ Trigger: [HTTP endpoint / schedule / CLI]
 Flow:
 1. [Receive event / run on schedule]
 2. POST /trigger with prompt
-3. Poll /responses/:id until complete
-4. [Process response and take action]
+3. GET /responses/:id/stream — SSE stream until complete
+4. Parse `event: complete` from SSE text
+5. [Process response and take action]
 ```
 
 Confirm before building.
@@ -119,13 +121,12 @@ Confirm before building.
 
 Read `examples/n8n-workflows/` for existing haiflow + n8n templates. Use them as the base.
 
-The core n8n + haiflow pattern:
+The core n8n + haiflow pattern (uses SSE streaming, no polling loop):
 1. **Trigger node** — webhook, schedule, or service event
 2. **HTTP Request** — `POST /trigger` with `{prompt, session, id, source}`
-3. **Wait node** — pause 10-30s for Claude to process
-4. **HTTP Request** — `GET /responses/:id` to poll
-5. **IF node** — check `status === "pending"` or `status === "queued"`, loop back if so
-6. **Action node** — use `messages[]` from the completed response
+3. **HTTP Request** — `GET /responses/:id/stream` (response format: text, timeout: 310000ms)
+4. **Code node** — parse `event: complete` block from SSE text to extract response JSON
+5. **Action node** — use `messages[]` from the parsed response
 
 Use n8n MCP tools to deploy:
 - `mcp__n8n-mcp__search_workflows` — find existing
@@ -140,22 +141,23 @@ Follow CLAUDE.md conventions (Bun, no dotenv, TypeScript). The core pattern:
 
 ```ts
 const HAIFLOW = process.env.HAIFLOW_URL || "http://localhost:3333";
+const API_KEY = process.env.HAIFLOW_API_KEY;
+const headers = { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` };
 
 // 1. Trigger
 const { id } = await fetch(`${HAIFLOW}/trigger`, {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers,
   body: JSON.stringify({ prompt, session: "default", source: "integration" }),
 }).then(r => r.json());
 
-// 2. Poll
-let result;
-while (true) {
-  const res = await fetch(`${HAIFLOW}/responses/${id}`);
-  result = await res.json();
-  if (res.status === 200) break; // done
-  await Bun.sleep(5000); // 202 = pending/queued
-}
+// 2. Stream (SSE) — blocks until complete, no polling loop
+const res = await fetch(`${HAIFLOW}/responses/${id}/stream?session=default&timeout=300`, { headers });
+const text = await res.text();
+const blocks = text.split("\n\n").reverse();
+const completeBlock = blocks.find(b => b.includes("event: complete"));
+const dataLine = completeBlock?.split("\n").find(l => l.startsWith("data: "));
+const result = dataLine ? JSON.parse(dataLine.slice(6)) : null;
 
 // 3. Use result.messages[]
 ```

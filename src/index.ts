@@ -29,6 +29,13 @@ function requireAuth(req: Request): Response | null {
   return Response.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+function requireLocalhost(req: Request): Response | null {
+  const { hostname } = new URL(req.url);
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return null;
+  log("warn", "hook_rejected_non_local", { path: new URL(req.url).pathname, hostname });
+  return Response.json({ error: "Hooks are restricted to localhost" }, { status: 403 });
+}
+
 function authed(handler: (req: any) => Response | Promise<Response>) {
   return (req: any): Response | Promise<Response> => {
     const err = requireAuth(req);
@@ -151,8 +158,22 @@ function findSessionByClaudeId(claudeSessionId: string): string | null {
 }
 
 function sendToTmux(session: string, prompt: string): boolean {
+  const target = tmuxName(session);
+
+  // For large prompts, write to a temp file and use tmux load-buffer + paste-buffer
+  // to avoid send-keys buffer limits that cause pasted text not to submit
+  if (prompt.length > 2000) {
+    // For large prompts, write to a file and tell Claude to read it
+    const tmpFile = `/tmp/haiflow-prompt-${session}-${Date.now()}.txt`;
+    writeFileSync(tmpFile, prompt);
+    const shortPrompt = `Read the file ${tmpFile} and follow the instructions in it exactly.`;
+    const escaped = shortPrompt.replace(/"/g, '\\"');
+    const result = Bun.spawnSync(["tmux", "send-keys", "-t", target, escaped, "Enter"]);
+    return result.exitCode === 0;
+  }
+
   const escaped = prompt.replace(/"/g, '\\"');
-  const result = Bun.spawnSync(["tmux", "send-keys", "-t", tmuxName(session), escaped, "Enter"]);
+  const result = Bun.spawnSync(["tmux", "send-keys", "-t", target, escaped, "Enter"]);
   return result.exitCode === 0;
 }
 
@@ -216,7 +237,9 @@ function drainQueue(session: string) {
 
 function startClaudeSession(session: string, cwd: string): { success: boolean; error?: string } {
   if (isTmuxRunning(session)) {
-    return { success: false, error: `tmux session '${tmuxName(session)}' already exists` };
+    log("info", "session_reused", { session });
+    writeState(session, { status: "idle", since: new Date().toISOString() });
+    return { success: true };
   }
 
   const result = Bun.spawnSync([
@@ -496,6 +519,8 @@ const server = Bun.serve({
 
     "/hooks/session-start": {
       POST: async (req) => {
+        const err = requireLocalhost(req);
+        if (err) return err;
         const body = await req.json();
         const claudeId = body.session_id;
         let session = findSessionByClaudeId(claudeId);
@@ -524,6 +549,8 @@ const server = Bun.serve({
 
     "/hooks/prompt": {
       POST: async (req) => {
+        const err = requireLocalhost(req);
+        if (err) return err;
         const body = await req.json();
         const session = findSessionByClaudeId(body.session_id);
         if (!session) return Response.json({ ok: true });
@@ -542,6 +569,8 @@ const server = Bun.serve({
 
     "/hooks/stop": {
       POST: async (req) => {
+        const err = requireLocalhost(req);
+        if (err) return err;
         const body = await req.json();
         const session = findSessionByClaudeId(body.session_id);
         if (!session) return Response.json({ ok: true });
@@ -561,6 +590,8 @@ const server = Bun.serve({
 
     "/hooks/session-end": {
       POST: async (req) => {
+        const err = requireLocalhost(req);
+        if (err) return err;
         const body = await req.json();
         const session = findSessionByClaudeId(body.session_id);
         if (!session) return Response.json({ ok: true });

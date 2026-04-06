@@ -139,7 +139,11 @@ The server will refuse to start without it. All API endpoints (except `/health` 
 curl -H "Authorization: Bearer your-secret-key" http://localhost:3333/sessions
 ```
 
-Hooks are excluded from auth since they come from Claude Code running locally.
+Hooks are excluded from auth since they come from Claude Code running locally — requests to `/hooks/*` are restricted to localhost.
+
+### Exposing to the internet
+
+If you need to access haiflow remotely (from n8n cloud, webhooks, etc.), see [DEPLOYMENT.md](DEPLOYMENT.md) for a guide on setting up Cloudflare Zero Trust Access — adds an identity layer so a stolen API key alone isn't enough.
 
 ## API
 
@@ -184,6 +188,10 @@ Events: `server_started`, `sessions_recovered`, `session_started`, `session_stop
 5. **`GET /responses/:id`** returns the response once complete, or `pending`/`queued` status while in progress
 6. The queue auto-drains — when Claude finishes one task, the next queued prompt is sent automatically
 
+### Context management
+
+Context filling isn't a problem with haiflow. Each session is tied to the current task — once the task completes, the session can close cleanly with no leftover context. But this is optional: if the session is still healthy, haiflow keeps it alive so context builds up across tasks, giving Claude more awareness of prior work in the same session. If context does fill up, the next task simply starts a fresh session.
+
 ## Integration examples
 
 Haiflow works with any tool that can make HTTP requests. Here are a few examples:
@@ -192,7 +200,8 @@ Haiflow works with any tool that can make HTTP requests. Here are a few examples
 
 Import the workflow templates from `examples/n8n-workflows/`:
 - `trigger-prompt.json` — Webhook that forwards prompts to haiflow
-- `scheduled-trigger-with-polling.json` — Scheduled daily trigger with response polling
+- `scheduled-trigger-with-polling.json` — Scheduled daily trigger with SSE streaming
+- `pr-review-bot.json` — Automated PR review bot using `/code-review`
 
 ### Cron job
 

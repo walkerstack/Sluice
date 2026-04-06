@@ -12,7 +12,8 @@
     "start": "bun run src/index.ts",
     "postinstall": "bun run bin/haiflow.ts setup",
     "setup": "bun run bin/haiflow.ts setup",
-    "check": "bash bin/check-deps.sh",
+    "deps": "bash bin/check-deps.sh",
+    "doctor": "bash bin/doctor.sh",
     "test": "bun test"
   },
   "repository": {

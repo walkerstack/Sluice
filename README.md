@@ -49,13 +49,17 @@ Reviewer     ──emit──▶ review.done  ──subscribe──▶ QA Agent
 
 See [Pipeline](#pipeline) for setup.
 
+## Platform support
+
+macOS and Linux only. Windows is not supported yet (haiflow depends on tmux and POSIX shell scripts).
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) v1.2.3+
 - [tmux](https://github.com/tmux/tmux)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - [jq](https://jqlang.github.io/jq/)
-- [Redis](https://redis.io/) (optional — needed for decoupled pipeline pub/sub)
+- [Redis](https://redis.io/) (event persistence and delivery tracking — `docker run -d -p 6379:6379 redis`)
 
 ## Quick start
 
@@ -138,7 +142,7 @@ cp .env.example .env
 | `HAIFLOW_DATA_DIR` | `/tmp/haiflow` | Directory for session state, queues, and responses |
 | `HAIFLOW_PORT` | `3333` | Port used by hook scripts (set if different from PORT) |
 | `HAIFLOW_API_KEY` | — | **Required.** Any string you choose — this is your own secret, not a paid key |
-| `REDIS_URL` | `redis://localhost:6379` | Redis URL for pipeline pub/sub (optional — falls back to direct dispatch) |
+| `REDIS_URL` | `redis://localhost:6379` | **Required.** Redis URL for event persistence and delivery tracking |
 | `N8N_API_KEY` | — | n8n API key for workflow integration |
 
 ## Authentication
@@ -245,7 +249,7 @@ The pipeline system lets you chain agents together using pub/sub topics. When an
 
 1. Agent finishes a task → `/hooks/stop` fires
 2. Haiflow checks if the session has emitter topics in `pipeline.json`
-3. Output is published to those topics (via Redis pub/sub, or direct dispatch if Redis is unavailable)
+3. Output is published to those topics (persisted in Redis with delivery tracking)
 4. Subscriber agents receive the message, rendered through their prompt template
 5. If a subscriber is busy, the message queues up and drains automatically
 
@@ -386,7 +390,8 @@ curl -s -H "Authorization: Bearer $HAIFLOW_API_KEY" \
 
 - **Circular protection**: If agent A emits to a topic that eventually routes back to A, the cycle is detected and skipped
 - **Emitter allowlist**: Only sessions listed in `emitters` can publish to a topic (except `POST /publish` which uses `"external"`)
-- **Graceful degradation**: No Redis? Pipeline still works via direct dispatch
+- **Webhook retry**: Failed webhook deliveries are retried with exponential backoff (max 5 attempts)
+- **Event replay**: Unprocessed events are replayed on server restart
 
 See `examples/pipeline.json` for a full design→developer→reviewer→QA example.
 
@@ -407,8 +412,10 @@ haiflow/
 │   └── index.test.ts         # Unit tests
 ├── bin/
 │   ├── haiflow.ts            # CLI wrapper
-│   └── check-deps.sh         # Dependency checker
+│   ├── check-deps.sh         # Dependency checker
+│   └── doctor.sh             # Full system health check
 ├── hooks/
+│   ├── forward.sh            # Shared: guard + forward to haiflow server
 │   ├── session-start.sh      # SessionStart hook
 │   ├── prompt.sh             # UserPromptSubmit hook
 │   ├── stop.sh               # Stop hook
@@ -433,7 +440,8 @@ haiflow/
 | `bun run setup` | Install Claude Code hooks |
 | `bun run dev` | Start server with hot reload |
 | `bun run start` | Start server |
-| `bun run check` | Check all dependencies |
+| `bun run deps` | Check all dependencies |
+| `bun run doctor` | Full health check (server, n8n, sessions, pipeline) |
 | `bun test` | Run tests |
 
 ## License

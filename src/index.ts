@@ -1065,23 +1065,31 @@ const server = Bun.serve({
 
       const proc = Bun.spawn(cmd, {
         stdout: "pipe",
-        stderr: "pipe",
+        stderr: "ignore",
         env: { ...process.env, TERM: "xterm-256color" },
       });
 
       ws.data.proc = proc;
 
-      // Stream tmux output to the WebSocket
+      // Stream tmux output to the WebSocket via explicit reader
+      const reader = proc.stdout.getReader();
       (async () => {
         try {
-          for await (const chunk of proc.stdout) {
-            ws.send(chunk);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            try { ws.send(value); } catch { break; }
           }
         } catch {
-          // WebSocket closed
+          // Stream ended or errored
         }
         try { ws.close(); } catch {}
       })();
+
+      // Close WebSocket if process exits unexpectedly
+      proc.exited.then(() => {
+        try { ws.close(); } catch {}
+      }).catch(() => {});
 
       log("info", "terminal_ws_opened", { session });
     },

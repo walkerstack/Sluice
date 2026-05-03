@@ -697,7 +697,7 @@ const server = Bun.serve({
             publishedAt: e.publishedAt,
           });
         }
-        return Response.json({ ...pipeline, redis: true, recentEvents });
+        return Response.json({ ...pipeline, redis: eventBus.connected, recentEvents });
       }),
     },
 

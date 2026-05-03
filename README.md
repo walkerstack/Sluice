@@ -59,9 +59,27 @@ macOS and Linux only. Windows is not supported yet (haiflow depends on tmux and 
 - [tmux](https://github.com/tmux/tmux)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - [jq](https://jqlang.github.io/jq/)
-- [Redis](https://redis.io/) (event persistence and delivery tracking — `docker run -d -p 6379:6379 redis`)
+- [Redis](https://redis.io/) — *optional*, enables event persistence and delivery retry. Without it, pipeline events fire but aren't persisted. Run with `docker run -d -p 6379:6379 redis`.
 
 ## Quick start
+
+### One-liner (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/andersonaguiar/haiflow/main/install.sh | bash
+```
+
+Installs Bun if missing, checks for `tmux`/`jq`/`claude`/`redis`, installs the `haiflow` CLI globally, and wires up Claude Code hooks.
+
+```bash
+export HAIFLOW_API_KEY=your-secret
+haiflow serve                                      # run the server
+haiflow start worker --cwd /path/to/your/project   # in another shell
+```
+
+Skip hook setup with `HAIFLOW_SKIP_SETUP=1`. Force npm registry with `HAIFLOW_INSTALL_METHOD=npm`. Inspect the script before piping if you prefer: `curl -fsSL .../install.sh | less`.
+
+### From source
 
 ```bash
 git clone https://github.com/andersonaguiar/haiflow.git

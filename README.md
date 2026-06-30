@@ -1,22 +1,12 @@
-# haiflow
+# Sluice
 
-**h**ooks · **ai** · **flow**
+**Run Claude Code as a headless AI agent over HTTP** — no API key costs, no SDK, just your existing Claude Code subscription.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Claude Code](https://img.shields.io/badge/Claude-Code-cc785c?logo=anthropic)](https://docs.anthropic.com/en/docs/claude-code)
-[![n8n](https://img.shields.io/badge/n8n-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
-[![tmux](https://img.shields.io/badge/tmux-1BB91F?logo=tmux&logoColor=white)](https://github.com/tmux/tmux)
-[![GitHub stars](https://img.shields.io/github/stars/andersonaguiar/haiflow)](https://github.com/andersonaguiar/haiflow)
+Sluice wraps Claude Code in tmux sessions and exposes a REST API to trigger prompts, queue work, and capture responses. Automate anything you can do in Claude Code — code generation, refactoring, bug triage, daily reports — from any HTTP client.
 
-Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as a headless AI agent over HTTP — no API key costs, no SDK, just your existing Claude Code subscription.
+> **Why not the Claude API?** Claude Code includes tool use, file access, git integration, and your custom skills out of the box. Sluice lets you automate all of that via HTTP without paying per-token API costs. Use n8n, cron, webhooks, or any automation tool to drive it.
 
-Haiflow wraps Claude Code in tmux sessions and exposes a REST API to trigger prompts, queue work, and capture responses. Automate anything you can do in Claude Code — code generation, refactoring, bug triage, daily reports — from any HTTP client.
-
-> **Why not the Claude API?** Claude Code includes tool use, file access, git integration, and your custom skills out of the box. Haiflow lets you automate all of that via HTTP without paying per-token API costs. Use n8n, cron, webhooks, or any automation tool to drive it.
-
-![demo](assets/demo.gif?v=2)
+> **Note:** the CLI, npm package, environment variables, database file, and MCP/skill identifiers keep their original `haiflow` / `HAIFLOW_*` names — every command, variable, and path below is copy-paste accurate.
 
 ```
 POST /trigger ───┐
@@ -49,27 +39,47 @@ Reviewer     ──emit──▶ review.done  ──subscribe──▶ QA Agent
 
 See [Pipeline](#pipeline) for setup.
 
+## Table of Contents
+
+- [Platform support](#platform-support)
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [Setup](#setup)
+- [Authentication](#authentication)
+- [Documentation](#documentation)
+- [Dashboard](#dashboard)
+- [Task history & savings](#task-history--savings)
+- [Logging](#logging)
+- [How it works](#how-it-works)
+- [Integration examples](#integration-examples)
+- [Worker pools & map-reduce](#worker-pools--map-reduce)
+- [Pipeline](#pipeline)
+- [Project structure](#project-structure)
+- [License](#license)
+
 ## Platform support
 
-macOS and Linux only. Windows is not supported yet (haiflow depends on tmux and POSIX shell scripts).
+macOS and Linux only. Windows is not supported yet (Sluice depends on tmux and POSIX shell scripts).
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) v1.2.3+
-- [tmux](https://github.com/tmux/tmux)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
-- [jq](https://jqlang.github.io/jq/)
-- [Redis](https://redis.io/) — *optional*, enables event persistence and delivery retry. Without it, pipeline events fire but aren't persisted. Run with `docker run -d -p 6379:6379 redis`.
+- **Bun** v1.2.3+
+- **tmux**
+- **Claude Code CLI**
+- **jq**
+- **Redis** — *optional*, enables event persistence and delivery retry. Without it, pipeline events fire but aren't persisted. Run with `docker run -d -p 6379:6379 redis`.
 
 ## Quick start
 
-### One-liner (macOS / Linux)
+### Install script (macOS / Linux)
+
+From a clone of this repository:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/andersonaguiar/haiflow/main/install.sh | bash
+bash install.sh
 ```
 
-Installs Bun if missing, checks for `tmux`/`jq`/`claude`/`redis`, installs the `haiflow` CLI globally, and wires up Claude Code hooks.
+It installs Bun if missing, checks for `tmux`/`jq`/`claude`/`redis`, installs the CLI globally, and wires up Claude Code hooks.
 
 ```bash
 export HAIFLOW_API_KEY=your-secret
@@ -79,13 +89,11 @@ haiflow init /path/to/your/project                 # in another shell: wires hoo
 
 `haiflow init` is the fastest way to a working setup: it installs the hooks, starts a session, fires a smoke-test prompt, and tells you immediately if the hooks aren't wired (the #1 silent failure). To check health anytime, run `haiflow doctor` or `GET /doctor`. Prefer to do it by hand? Use `haiflow start worker --cwd /path/to/your/project`.
 
-Skip hook setup with `HAIFLOW_SKIP_SETUP=1`. Force npm registry with `HAIFLOW_INSTALL_METHOD=npm`. Inspect the script before piping if you prefer: `curl -fsSL .../install.sh | less`.
+Skip hook setup with `HAIFLOW_SKIP_SETUP=1`. Force the npm registry with `HAIFLOW_INSTALL_METHOD=npm`.
 
 ### From source
 
 ```bash
-git clone https://github.com/andersonaguiar/haiflow.git
-cd haiflow
 bun install      # also installs Claude Code hooks automatically
 cp .env.example .env
 # Edit .env and set HAIFLOW_API_KEY to any secret string you choose
@@ -142,13 +150,13 @@ bun install
 
 ### 2. Install hooks
 
-Haiflow uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) to track session state. The setup command merges hook config into `~/.claude/settings.json`:
+Sluice uses Claude Code hooks to track session state. The setup command merges hook config into `~/.claude/settings.json`:
 
 ```bash
 bun run setup
 ```
 
-The hooks are thin HTTP forwarders — they POST Claude Code events to the haiflow server. If the server isn't running, they silently no-op. They won't interfere with non-orchestrated Claude sessions (the server ignores unknown session IDs).
+The hooks are thin HTTP forwarders — they POST Claude Code events to the server. If the server isn't running, they silently no-op. They won't interfere with non-orchestrated Claude sessions (the server ignores unknown session IDs).
 
 ### 3. Configure environment (optional)
 
@@ -157,18 +165,18 @@ cp .env.example .env
 ```
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `PORT` | `3333` | HTTP server port |
-| `HAIFLOW_ENV` | `development` | Deployment environment (`development`/`production`; falls back to `NODE_ENV`). In `production`, haiflow fails closed at boot on an insecure exposure and rejects a weak/placeholder key. Dev is permissive (no tunnel required). |
+| `HAIFLOW_ENV` | `development` | Deployment environment (`development`/`production`; falls back to `NODE_ENV`). In `production`, the server fails closed at boot on an insecure exposure and rejects a weak/placeholder key. Dev is permissive (no tunnel required). |
 | `HAIFLOW_HOST` | `127.0.0.1` | Bind address. Loopback by default so the origin is only reachable through a front proxy/tunnel — an identity layer can't be bypassed by hitting the port directly. A public bind in production needs `HAIFLOW_ALLOW_PUBLIC_BIND=true`. See [DEPLOYMENT.md](DEPLOYMENT.md). |
 | `HAIFLOW_ALLOW_PUBLIC_BIND` | `false` | Acknowledge a public bind (`0.0.0.0`/LAN/public IP) in production — you firewall the port and run your own identity layer. Without it, production refuses to start when bound publicly. |
 | `HAIFLOW_DATA_DIR` | `/tmp/haiflow` | Directory for session state, queues, and responses |
-| `HAIFLOW_PORT` | `3333` | Port used by hook scripts (set if different from PORT) |
+| `HAIFLOW_PORT` | `3333` | Port used by hook scripts (set if different from `PORT`) |
 | `HAIFLOW_API_KEY` | — | **Required.** Any string you choose — this is your own secret, not a paid key. In `production` it must be ≥24 chars and not a placeholder. |
 | `HAIFLOW_CWD` | — | When set, every session is forced to use this cwd. The `cwd` field in `/session/start` request bodies is ignored (a warning is logged if it differs). |
 | `HAIFLOW_ALLOW_REQUEST_CWD` | `true` | When `false`, `/session/start` rejects requests that try to set their own `cwd` — `HAIFLOW_CWD` must be set on the server instead. |
-| `HAIFLOW_GUARDRAILS` | `true` | Installs `~/.claude/skills/haiflow-guardrails/SKILL.md` on server boot and injects `/haiflow-guardrails` into each new tmux session. The skill instructs Claude to refuse paths outside cwd, refuse to read secrets, and refuse network exfiltration. |
-| `REDIS_URL` | `redis://localhost:6379` | **Required.** Redis URL for event persistence and delivery tracking |
+| `HAIFLOW_GUARDRAILS` | `true` | Installs a guardrails skill on server boot and injects it into each new tmux session. The skill instructs Claude to refuse paths outside cwd, refuse to read secrets, and refuse network exfiltration. |
+| `REDIS_URL` | `redis://localhost:6379` | Redis URL for event persistence and delivery tracking |
 | `HAIFLOW_START_READY_TIMEOUT_MS` | `15000` | How long `/session/start` waits for the SessionStart hook to link a Claude session id before failing (a session that never links would silently drop every response — usually means hooks aren't wired) |
 | `HAIFLOW_ALLOW_TRIGGER_CALLBACK` | `false` | Enables the per-`/trigger` `callbackUrl` completion webhook. Off by default because an arbitrary callback URL is an SSRF surface |
 | `HAIFLOW_CALLBACK_ALLOW_HOSTS` | — | Optional comma-separated host allowlist for `callbackUrl`. With it set, callbacks to any other host are rejected with `400` |
@@ -186,15 +194,15 @@ cp .env.example .env
 
 `HAIFLOW_API_KEY` is required — pick any string you like (e.g. `openssl rand -hex 32`). It's not a third-party key or paid credential, just a secret you define to protect your server.
 
-**Why this matters:** Without auth, anyone who can reach your server could send arbitrary prompts to Claude Code running with full file and git access. That means reading your source code, modifying files, running shell commands, or exfiltrating data — all through a simple HTTP request.
+**Why this matters:** without auth, anyone who can reach your server could send arbitrary prompts to Claude Code running with full file and git access. That means reading your source code, modifying files, running shell commands, or exfiltrating data — all through a simple HTTP request.
 
 ### Secret redaction
 
-As defence-in-depth against the agent printing a secret it read while debugging, haiflow runs a best-effort redaction pass over every outbound text (responses, pipeline messages, webhooks, chat replies) before it leaves the box. It strips well-known credential shapes (AWS/GitHub/Stripe/Google/Anthropic/OpenAI keys, JWTs, Bearer tokens, private-key blocks), replacing each with `[REDACTED:type]` and recording a count. It is on by default (disable with `HAIFLOW_REDACT=false`); emails are opt-in (`HAIFLOW_REDACT_EMAILS=true`); add your own patterns with `HAIFLOW_REDACT_EXTRA`. This is best-effort DLP, not a firewall: it won't catch an encoded or reshaped secret, and it only ever rewrites outbound text, never the files the agent writes inside its working directory.
+As defence-in-depth against the agent printing a secret it read while debugging, Sluice runs a best-effort redaction pass over every outbound text (responses, pipeline messages, webhooks, chat replies) before it leaves the box. It strips well-known credential shapes (cloud provider keys, JWTs, Bearer tokens, private-key blocks), replacing each with `[REDACTED:type]` and recording a count. It is on by default (disable with `HAIFLOW_REDACT=false`); emails are opt-in (`HAIFLOW_REDACT_EMAILS=true`); add your own patterns with `HAIFLOW_REDACT_EXTRA`. This is best-effort DLP, not a firewall: it won't catch an encoded or reshaped secret, and it only ever rewrites outbound text, never the files the agent writes inside its working directory.
 
 ### Bearer token
 
-The server will refuse to start without it. All API endpoints (except `/health` and `/hooks/*`) require an `Authorization` header:
+The server refuses to start without it. All API endpoints (except `/health` and `/hooks/*`) require an `Authorization` header:
 
 ```bash
 curl -H "Authorization: Bearer your-secret-key" http://localhost:3333/sessions
@@ -204,23 +212,21 @@ Hooks are excluded from auth since they come from Claude Code running locally �
 
 ### Exposing to the internet
 
-If you need to access haiflow remotely (from n8n cloud, webhooks, etc.), see [DEPLOYMENT.md](DEPLOYMENT.md) for a guide on setting up Cloudflare Zero Trust Access — adds an identity layer so a stolen API key alone isn't enough.
+If you need remote access (from cloud automation, webhooks, etc.), see [DEPLOYMENT.md](DEPLOYMENT.md) for a guide to putting an identity layer in front, so a stolen API key alone isn't enough.
 
 ## Documentation
 
-Full developer documentation lives in [`docs/`](docs/), a searchable [Mintlify](https://mintlify.com) site covering the quickstart, every endpoint (with an interactive playground generated from `docs/openapi.json`), the MCP server, n8n nodes, pipelines, worker pools, deployment, and security. Preview it locally:
+Full developer documentation lives in [`docs/`](docs/) — a searchable site covering the quickstart, every endpoint (with an interactive playground generated from `docs/openapi.json`), the MCP server, n8n nodes, pipelines, worker pools, deployment, and security. Preview it locally:
 
 ```bash
 cd docs && npx mint dev   # http://localhost:3000
 ```
 
-## API
-
-See [API.md](API.md) for the full API reference: all endpoints, parameters, and examples. The same surface is also published as an interactive reference in the [docs site](docs/).
+See [API.md](API.md) for the full API reference: all endpoints, parameters, and examples.
 
 ## Dashboard
 
-Haiflow includes a built-in web dashboard for monitoring and controlling sessions in real-time.
+A built-in web dashboard monitors and controls sessions in real time:
 
 ```
 http://localhost:3333/dashboard
@@ -228,7 +234,7 @@ http://localhost:3333/dashboard
 
 Enter your `HAIFLOW_API_KEY` to authenticate, then you get a two-panel layout:
 
-- **Left panel** — all sessions with live status badges (idle/busy/offline), remove offline sessions with ×
+- **Left panel** — all sessions with live status badges (idle/busy/offline); remove offline sessions with ×
 - **Right panel** — current prompt (when busy), tabbed Queue/Responses/History view with expandable items showing full prompt and response text
 - **History tab** — every task's tool/command/diff timeline, token usage, duration, and "API cost avoided", plus rolling 5h/7d usage windows (see [Task history & savings](#task-history--savings))
 - **Live terminal** — read-only by default; click **Take control** to switch to a writable attach and type directly into a wedged session from the browser (gated by the API key; disable with `HAIFLOW_ALLOW_TAKEOVER=false`). While you hold the wheel, auto-drain pauses so the queue isn't typed over your input
@@ -238,15 +244,15 @@ The dashboard auto-refreshes every 3 seconds. No extra setup needed — it's ser
 
 ## Task history & savings
 
-Every task is recorded in a durable SQLite ledger (`haiflow.db` in `HAIFLOW_DATA_DIR`). On completion, haiflow mines the same Claude Code transcript it parses for the Stop hook and stores what the task actually did: the ordered tool calls, commands run, files changed, real diffs, token usage, model, and timing. Query it via `GET /tasks`, `GET /tasks/:id`, and `GET /responses/:id/timeline`, or browse it in the dashboard's History tab.
+Every task is recorded in a durable SQLite ledger (`haiflow.db` in `HAIFLOW_DATA_DIR`). On completion, the server mines the same Claude Code transcript it parses for the Stop hook and stores what the task actually did: the ordered tool calls, commands run, files changed, real diffs, token usage, model, and timing. Query it via `GET /tasks`, `GET /tasks/:id`, and `GET /responses/:id/timeline`, or browse it in the dashboard's History tab.
 
-Because haiflow runs on a flat Claude Code subscription, tasks cost nothing per-token. `GET /usage` and `GET /usage/window` report measured token consumption over rolling 5-hour and 7-day windows (the subscription rate-limit windows) alongside the equivalent API cost a per-token caller would have paid — the savings the tool exists to deliver. The dollar figure is an estimate from a maintained price table, not a bill. Set `HAIFLOW_USAGE_ALERT_TOKENS` to get an alert-only flag when the 5h window crosses a threshold (it never throttles work).
+Because Sluice runs on a flat Claude Code subscription, tasks cost nothing per-token. `GET /usage` and `GET /usage/window` report measured token consumption over rolling 5-hour and 7-day windows (the subscription rate-limit windows) alongside the equivalent API cost a per-token caller would have paid — the savings the tool exists to deliver. The dollar figure is an estimate from a maintained price table, not a bill. Set `HAIFLOW_USAGE_ALERT_TOKENS` to get an alert-only flag when the 5h window crosses a threshold (it never throttles work).
 
-> Durability note: the ledger lives in `HAIFLOW_DATA_DIR`, which defaults to `/tmp/haiflow` and is wiped on reboot. Point it at a persistent directory to keep history across restarts.
+> **Durability note:** the ledger lives in `HAIFLOW_DATA_DIR`, which defaults to `/tmp/haiflow` and is wiped on reboot. Point it at a persistent directory to keep history across restarts.
 
 ## Logging
 
-Haiflow outputs structured JSON logs to stdout/stderr for all key events:
+Structured JSON logs go to stdout/stderr for all key events:
 
 ```jsonl
 {"ts":"2026-03-18T02:35:00Z","level":"info","event":"server_started","port":3333,"auth":true}
@@ -262,34 +268,37 @@ Events: `server_started`, `sessions_recovered`, `stale_prompts_swept`, `sessions
 
 1. **`POST /session/start`** spawns Claude in a detached tmux session with `--permission-mode auto`
 2. **`POST /trigger`** sends prompts via `tmux send-keys` (or queues if busy) and assigns a task ID
-3. **Claude Code hooks** forward lifecycle events (start, prompt, stop, end) to the haiflow server via HTTP
+3. **Claude Code hooks** forward lifecycle events (start, prompt, stop, end) to the server via HTTP
 4. On task completion, the server extracts assistant messages from the session transcript and saves them keyed by task ID
 5. **`GET /responses/:id`** returns the response once complete, or `pending`/`queued` status while in progress
 6. The queue auto-drains — when Claude finishes one task, the next queued prompt is sent automatically
 
 ### Context management
 
-Context filling isn't a problem with haiflow. Each session is tied to the current task — once the task completes, the session can close cleanly with no leftover context. But this is optional: if the session is still healthy, haiflow keeps it alive so context builds up across tasks, giving Claude more awareness of prior work in the same session. If context does fill up, the next task simply starts a fresh session.
+Context filling isn't a problem here. Each session is tied to the current task — once the task completes, the session can close cleanly with no leftover context. But this is optional: if the session is still healthy, Sluice keeps it alive so context builds across tasks, giving Claude more awareness of prior work in the same session. If context does fill up, the next task simply starts a fresh session.
 
 ## Integration examples
 
-Haiflow works with any tool that can make HTTP requests. Here are a few examples:
+Sluice works with any tool that can make HTTP requests.
 
 ### n8n (example workflow templates included)
 
 Import the chained calc workflow from `examples/chained-calc/`:
+
 - `chained-calc-step1.json` — Step 1: calculate 2+2
 - `chained-calc-step2.json` — Step 2: multiply result by 5
 - `chained-calc-step3.json` — Step 3: multiply result by 10
 - `pipeline-calc-chain.json` — Pipeline configuration that wires them together
 
-### MCP server (drive haiflow from any agent)
+Custom n8n nodes live in `integrations/n8n-nodes-haiflow/`.
 
-`integrations/haiflow-mcp/` is an MCP server that exposes haiflow as tools (`haiflow_run`, `haiflow_start_session`, `haiflow_trigger`, `haiflow_get_response`, `haiflow_stop_session`, `haiflow_status`, `haiflow_doctor`, `haiflow_map`), so any MCP-capable agent (Claude Desktop, Cursor, Cline, another Claude Code) can orchestrate Claude Code through haiflow. See `integrations/haiflow-mcp/README.md` for wiring. Inside Claude Code, the `haiflow` skill teaches an agent to drive the HTTP API directly.
+### MCP server (drive it from any agent)
+
+`integrations/haiflow-mcp/` is an MCP server that exposes the API as tools (`haiflow_run`, `haiflow_start_session`, `haiflow_trigger`, `haiflow_get_response`, `haiflow_stop_session`, `haiflow_status`, `haiflow_doctor`, `haiflow_map`), so any MCP-capable agent can orchestrate Claude Code through it. See that directory's README for wiring. Inside Claude Code, the bundled skill teaches an agent to drive the HTTP API directly.
 
 ### GitHub bridge
 
-Mention `@haiflow` in a GitHub issue or PR comment and Claude Code addresses it in the locally checked-out repo: on a branch, as a **draft** PR, never touching the default branch. The bridge is a thin, gated relay; Claude does the branch/commit/PR work itself (it has `gh` and `git` in the session).
+Mention the bot in a GitHub issue or PR comment and Claude Code addresses it in the locally checked-out repo: on a branch, as a **draft** PR, never touching the default branch. The bridge is a thin, gated relay; Claude does the branch/commit/PR work itself (it has `gh` and `git` in the session).
 
 ```bash
 # point GITHUB_SESSION at a session whose cwd is the cloned repo
@@ -320,7 +329,7 @@ ct '{"prompt": "explain the error in the logs", "id": "debug-1"}'
 
 ## Worker pools & map-reduce
 
-Define a pool of member sessions in `pipeline.json` and haiflow load-balances work across them. `POST /pool/:name/trigger` sends one prompt to an idle member; `POST /map` fans a list of items across the pool in parallel and fires a reducer once every item returns (the fan-in / JOIN). Because it all runs on one flat subscription, mapping 40 files across a pool of workers costs nothing extra per token. See [Worker pools & map-reduce](API.md) in the API reference for the full request shape.
+Define a pool of member sessions in `pipeline.json` and work is load-balanced across them. `POST /pool/:name/trigger` sends one prompt to an idle member; `POST /map` fans a list of items across the pool in parallel and fires a reducer once every item returns (the fan-in / JOIN). Because it all runs on one flat subscription, mapping 40 files across a pool of workers costs nothing extra per token. See [API.md](API.md) for the full request shape.
 
 ```json
 { "pools": { "reviewers": { "members": ["reviewer-1", "reviewer-2", "reviewer-3"] } } }
@@ -328,19 +337,19 @@ Define a pool of member sessions in `pipeline.json` and haiflow load-balances wo
 
 ## Pipeline
 
-The pipeline system lets you chain agents together using pub/sub topics. When an agent finishes a task, haiflow automatically emits its output to configured topics. Other agents subscribed to those topics receive the output as their next prompt.
+The pipeline system chains agents together using pub/sub topics. When an agent finishes a task, its output is emitted to configured topics. Other agents subscribed to those topics receive the output as their next prompt.
 
 ### How it works
 
 1. Agent finishes a task → `/hooks/stop` fires
-2. Haiflow checks if the session has emitter topics in `pipeline.json`
+2. The server checks whether the session has emitter topics in `pipeline.json`
 3. Output is published to those topics (persisted in Redis with delivery tracking)
 4. Subscriber agents receive the message, rendered through their prompt template
 5. If a subscriber is busy, the message queues up and drains automatically
 
 ### Setup
 
-1. **Create `pipeline.json`** in your `HAIFLOW_DATA_DIR` (default `/tmp/haiflow`):
+**1. Create `pipeline.json`** in your `HAIFLOW_DATA_DIR` (default `/tmp/haiflow`):
 
 ```json
 {
@@ -370,10 +379,9 @@ The pipeline system lets you chain agents together using pub/sub topics. When an
 }
 ```
 
-2. **Start your agents** and trigger the first one. The pipeline handles the rest.
+**2. Start your agents** and trigger the first one. The pipeline handles the rest.
 
 ```bash
-# Start all agents in the chain
 curl -X POST http://localhost:3333/session/start \
   -H "Authorization: Bearer $HAIFLOW_API_KEY" \
   -H "Content-Type: application/json" \
@@ -388,7 +396,7 @@ curl -X POST http://localhost:3333/session/start \
 curl -X POST http://localhost:3333/trigger \
   -H "Authorization: Bearer $HAIFLOW_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Analyse the Figma design at ...", "session": "design-agent"}'
+  -d '{"prompt": "Analyse the design at ...", "session": "design-agent"}'
 ```
 
 ### Prompt templates
@@ -396,7 +404,7 @@ curl -X POST http://localhost:3333/trigger \
 Templates use `{{variable}}` placeholders:
 
 | Variable | Description |
-|----------|-------------|
+|---|---|
 | `{{message}}` | The source agent's output text |
 | `{{topic}}` | The topic name (e.g. `design.ready`) |
 | `{{sourceSession}}` | The session that emitted the event |
@@ -410,10 +418,10 @@ Topics can fire webhooks when events are published — no polling needed. Add a 
 {
   "topics": {
     "review.done": {
-      "subscribers": [...],
+      "subscribers": [],
       "webhooks": [
         {
-          "url": "https://your-n8n.example.com/webhook/review-done",
+          "url": "https://your-automation.example.com/webhook/review-done",
           "headers": { "X-Pipeline-Secret": "your-secret" }
         }
       ]
@@ -422,7 +430,7 @@ Topics can fire webhooks when events are published — no polling needed. Add a 
 }
 ```
 
-Haiflow POSTs the event payload to each URL:
+The event payload POSTed to each URL:
 
 ```json
 {
@@ -435,7 +443,7 @@ Haiflow POSTs the event payload to each URL:
 ```
 
 | Field | Default | Description |
-|-------|---------|-------------|
+|---|---|---|
 | `url` | — | Webhook endpoint URL |
 | `method` | `POST` | HTTP method |
 | `headers` | `{}` | Custom headers (merged with `Content-Type: application/json`) |
@@ -443,7 +451,7 @@ Haiflow POSTs the event payload to each URL:
 
 ### External publishing
 
-Inject events from outside (n8n, scripts, webhooks):
+Inject events from outside (automation tools, scripts, webhooks):
 
 ```bash
 curl -X POST http://localhost:3333/publish \
@@ -466,65 +474,62 @@ curl -s -H "Authorization: Bearer $HAIFLOW_API_KEY" \
 
 ### Safety
 
-- **Circular protection**: If agent A emits to a topic that eventually routes back to A, the cycle is detected and skipped
-- **Emitter allowlist**: Only sessions listed in `emitters` can publish to a topic (except `POST /publish` which uses `"external"`)
-- **Webhook retry**: Failed webhook deliveries are retried with exponential backoff (max 5 attempts)
-- **Event replay**: Unprocessed events are replayed on server restart
+- **Circular protection** — if agent A emits to a topic that eventually routes back to A, the cycle is detected and skipped
+- **Emitter allowlist** — only sessions listed in `emitters` can publish to a topic (except `POST /publish`, which uses `"external"`)
+- **Webhook retry** — failed deliveries retry with exponential backoff (max 5 attempts)
+- **Event replay** — unprocessed events are replayed on server restart
 
-See `examples/chained-calc/pipeline-calc-chain.json` for a chained calc workflow example.
+See `examples/chained-calc/pipeline-calc-chain.json` for a worked example.
 
 ## Project structure
 
 ```
-haiflow/
+.
 ├── src/
 │   ├── index.ts              # Bun HTTP server
-│   ├── github-bot.ts         # GitHub webhook bridge (haiflow github)
+│   ├── github-bot.ts         # GitHub webhook bridge
+│   ├── events.ts             # Pub/sub event system
+│   ├── ingest.ts             # External event ingestion
+│   ├── ledger.ts             # SQLite task ledger
+│   ├── pricing.ts            # Token price table for savings estimates
+│   ├── redact.ts             # Outbound secret redaction
+│   ├── skills/               # Bundled Claude Code skills
 │   └── dashboard/            # Web dashboard (React + Tailwind)
-│       ├── index.html
-│       ├── app.tsx
-│       ├── api.ts
-│       └── components/
-├── tests/
-│   ├── api.test.ts                  # API integration tests
-│   ├── auth.test.ts                 # Auth middleware tests
-│   ├── consumer-lifecycle.test.ts   # E2E: start → payload → response → stop (fake Claude, no auth needed)
-│   ├── integration.test.ts          # E2E against the REAL Claude CLI (skipped without it)
-│   ├── fixtures/fake-claude.ts      # Test double that drives the hook lifecycle deterministically
-│   └── index.test.ts                # Unit tests
 ├── bin/
 │   ├── haiflow.ts            # CLI wrapper
 │   ├── check-deps.sh         # Dependency checker
-│   └── doctor.sh             # Full system health check
+│   ├── doctor.sh             # Full system health check
+│   └── postinstall.sh        # Hook installation
 ├── hooks/
-│   ├── forward.sh            # Shared: guard + forward to haiflow server
+│   ├── forward.sh            # Shared: guard + forward to the server
 │   ├── session-start.sh      # SessionStart hook
 │   ├── prompt.sh             # UserPromptSubmit hook
 │   ├── stop.sh               # Stop hook
 │   └── session-end.sh        # SessionEnd hook
-├── examples/
-│   └── chained-calc/         # Chained calc workflow (n8n steps + pipeline config)
-├── assets/
-│   └── demo.gif              # Demo recording
+├── integrations/
+│   ├── haiflow-mcp/          # MCP server
+│   └── n8n-nodes-haiflow/    # Custom n8n nodes
+├── tests/                    # Unit, API, auth, and E2E tests
+├── examples/chained-calc/    # Chained workflow example
+├── docs/                     # Documentation site + openapi.json
 ├── API.md                    # Full API reference
-├── .env.example
-├── tsconfig.json
-├── package.json
-└── LICENSE
+├── DEPLOYMENT.md             # Remote exposure and hardening
+└── SECURITY.md               # Threat model and checklist
 ```
 
 ### Scripts
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `bun run setup` | Install Claude Code hooks |
 | `bun run dev` | Start server with hot reload |
 | `bun run start` | Start server |
 | `bun run github` | Run the GitHub webhook bridge |
+| `bun run build:dashboard` | Build the dashboard bundle |
 | `bun run deps` | Check all dependencies |
-| `bun run doctor` | Full health check (server, n8n, sessions, pipeline) |
+| `bun run doctor` | Full health check (server, integrations, sessions, pipeline) |
 | `bun test` | Run tests |
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
